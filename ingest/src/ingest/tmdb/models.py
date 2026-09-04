@@ -46,3 +46,11 @@ class TMDBCrewCredit:
 
     department: str | None = None
     job: str | None = None
+
+
+@dataclass
+class TMDBDiscoverMoviePage:
+    page: int
+    results: list[TMDBMovie]
+    total_pages: int
+    total_results: int

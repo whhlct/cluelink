@@ -4,6 +4,7 @@ from ingest.tmdb.models import (
     TMDBCrewCredit,
     TMDBDiscoverMoviePage,
     TMDBMovie,
+    TMDBMovieCredits,
     TMDBPerson,
 )
 
@@ -14,5 +15,6 @@ __all__ = [
     "TMDBPerson",
     "TMDBCastCredit",
     "TMDBCrewCredit",
+    "TMDBMovieCredits",
     "TMDBDiscoverMoviePage",
 ]

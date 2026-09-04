@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-import json
 import os
 from datetime import date
-from typing import Any, Mapping
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from typing import Any, AsyncIterator, Mapping
 
-from ingest.tmdb.models import TMDBDiscoverMoviePage, TMDBMovie
+import httpx
+
+from ingest.tmdb.models import (
+    TMDBCastCredit,
+    TMDBCrewCredit,
+    TMDBDiscoverMoviePage,
+    TMDBMovie,
+    TMDBMovieCredits,
+)
 
 
 class TMDBAPIError(RuntimeError):
@@ -25,11 +29,29 @@ class TMDBClient:
         if not self.api_token:
             raise ValueError("TMDB_API_KEY must be set or provided as api_token")
 
-    def discover_movie(
+        self._client = httpx.AsyncClient(
+            base_url=self.base_url,
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.api_token}",
+            },
+            timeout=self.timeout,
+        )
+
+    async def __aenter__(self) -> TMDBClient:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def discover_movie(
         self,
         params: Mapping[str, str | int | float | bool | date | None] | None = None,
     ) -> TMDBDiscoverMoviePage:
-        payload = self._get("/discover/movie", params)
+        payload = await self._get("/discover/movie", params)
         results = [self._movie_from_payload(movie) for movie in payload["results"]]
 
         return TMDBDiscoverMoviePage(
@@ -39,7 +61,71 @@ class TMDBClient:
             total_results=payload["total_results"],
         )
 
-    def _get(
+    async def movie_credits(
+        self,
+        movie_id: int,
+        language: str | None = None,
+    ) -> TMDBMovieCredits:
+        params = {"language": language} if language else None
+        payload = await self._get(f"/movie/{movie_id}/credits", params)
+        returned_movie_id = payload["id"]
+
+        return TMDBMovieCredits(
+            movie_id=returned_movie_id,
+            cast=[
+                TMDBCastCredit(
+                    movie_id=returned_movie_id,
+                    person_id=credit["id"],
+                    character=credit.get("character"),
+                    order=credit.get("order"),
+                )
+                for credit in payload["cast"]
+            ],
+            crew=[
+                TMDBCrewCredit(
+                    movie_id=returned_movie_id,
+                    person_id=credit["id"],
+                    department=credit.get("department"),
+                    job=credit.get("job"),
+                )
+                for credit in payload["crew"]
+            ],
+        )
+
+    async def discover_movies(
+        self,
+        params: Mapping[str, str | int | float | bool | date | None] | None = None,
+        limit: int | None = None,
+    ) -> list[TMDBMovie]:
+        return [movie async for movie in self.iter_discover_movies(params, limit)]
+
+    async def iter_discover_movies(
+        self,
+        params: Mapping[str, str | int | float | bool | date | None] | None = None,
+        limit: int | None = None,
+    ) -> AsyncIterator[TMDBMovie]:
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be at least 1")
+
+        query = dict(params or {})
+        page_number = int(query.pop("page", 1))
+        movie_count = 0
+
+        while limit is None or movie_count < limit:
+            page = await self.discover_movie({**query, "page": page_number})
+            for movie in page.results:
+                yield movie
+                movie_count += 1
+
+                if limit is not None and movie_count >= limit:
+                    return
+
+            if not page.results or page_number >= page.total_pages:
+                break
+
+            page_number += 1
+
+    async def _get(
         self,
         path: str,
         params: Mapping[str, str | int | float | bool | date | None] | None = None,
@@ -49,26 +135,23 @@ class TMDBClient:
             for key, value in (params or {}).items()
             if value is not None
         }
-        url = f"{self.base_url}{path}"
-        if query:
-            url = f"{url}?{urlencode(query)}"
-
-        request = Request(
-            url,
-            headers={
-                "Accept": "application/json",
-                "Authorization": f"Bearer {self.api_token}",
-            },
-        )
 
         try:
-            with urlopen(request, timeout=self.timeout) as response:
-                return json.load(response)
-        except HTTPError as error:
-            detail = error.read().decode("utf-8", errors="replace")
-            raise TMDBAPIError(f"TMDB returned HTTP {error.code}: {detail}") from error
-        except URLError as error:
-            raise TMDBAPIError(f"Could not reach TMDB: {error.reason}") from error
+            response = await self._client.get(
+                path,
+                params=query,
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as error:
+            response = error.response
+            raise TMDBAPIError(
+                f"TMDB returned HTTP {response.status_code}: {response.text}"
+            ) from error
+        except httpx.RequestError as error:
+            raise TMDBAPIError(f"Could not reach TMDB: {error}") from error
+        except ValueError as error:
+            raise TMDBAPIError("TMDB returned an invalid JSON response") from error
 
     @staticmethod
     def _query_value(value: str | int | float | bool | date) -> str:

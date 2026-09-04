@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-
+from domain.entity import Entity
 
 @dataclass
 class TMDBMovie:
@@ -46,6 +46,13 @@ class TMDBCrewCredit:
 
     department: str | None = None
     job: str | None = None
+
+
+@dataclass
+class TMDBMovieCredits:
+    movie_id: int
+    cast: list[TMDBCastCredit]
+    crew: list[TMDBCrewCredit]
 
 
 @dataclass

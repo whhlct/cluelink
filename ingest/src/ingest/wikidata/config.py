@@ -1,0 +1,18 @@
+import os
+
+
+WDQS_ENDPOINT = "https://query.wikidata.org/sparql"
+DEFAULT_WDQS_USER_AGENT = "Cluelink/0.1 (mailto:whhlct22@gmail.com)"
+WDQS_RETRY_COUNT = 3
+WDQS_REQUEST_TIMEOUT = 60.0
+WDQS_RETRY_BACKOFF_SECONDS = 2.0
+
+MIN_MOVIE_SITELINKS = 20
+MOVIE_START_YEAR = 1880
+MOVIE_END_YEAR = 2027
+RELATION_BATCH_SIZE = 250
+PERSON_BATCH_SIZE = 250
+
+
+def wdqs_user_agent() -> str:
+    return os.environ.get("WDQS_USER_AGENT", DEFAULT_WDQS_USER_AGENT)

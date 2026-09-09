@@ -19,12 +19,32 @@ logger = logging.getLogger(__name__)
 def parse_relation_bindings(
     bindings: list[dict[str, dict[str, str]]], relation_type: RelationType, source_relation_id: str
 ) -> list[WikidataRelationship]:
-    return [WikidataRelationship(
-        movie_qid=qid_from_entity_uri(binding["movie"]["value"]),
-        person_qid=qid_from_entity_uri(binding["person"]["value"]),
-        relation_type=relation_type,
-        source_relation_id=source_relation_id,
-    ) for binding in bindings]
+    relationships: list[WikidataRelationship] = []
+    skipped = 0
+
+    for binding in bindings:
+        try:
+            movie_qid = qid_from_entity_uri(binding["movie"]["value"])
+            person_qid = qid_from_entity_uri(binding["person"]["value"])
+        except (KeyError, ValueError):
+            skipped += 1
+            continue
+
+        relationships.append(WikidataRelationship(
+            movie_qid=movie_qid,
+            person_qid=person_qid,
+            relation_type=relation_type,
+            source_relation_id=source_relation_id,
+        ))
+
+    if skipped:
+        logger.warning(
+            "Skipped %d %s bindings with non-entity movie or person values",
+            skipped,
+            source_relation_id,
+        )
+
+    return relationships
 
 
 async def discover_relations(client: WDQSClient, store: PostgresWikidataStore, batch_size: int = RELATION_BATCH_SIZE) -> None:

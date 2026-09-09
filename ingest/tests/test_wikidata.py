@@ -24,7 +24,7 @@ class WikidataIngestTests(unittest.TestCase):
             {"movie": {"value": "http://www.wikidata.org/entity/Q2"}, "label": {"value": "Excluded"}, "sitelinks": {"value": "19"}},
         ])
         self.assertEqual([(movie.qid, movie.sitelink_count) for movie in movies], [("Q1", 20)])
-        self.assertIn("FILTER(?sitelinks >= 20)", movie_query(2000, 2001))
+        self.assertIn("HAVING(COUNT(DISTINCT ?sitelink) >= 20)", movie_query(2000, 2001))
 
     def test_person_parsing(self):
         people = parse_person_bindings([
@@ -38,6 +38,12 @@ class WikidataIngestTests(unittest.TestCase):
         director = parse_relation_bindings(bindings, RelationType.DIRECTED, "P57")[0]
         self.assertEqual((cast.person_qid, cast.movie_qid, cast.relation_type), ("Q20", "Q10", RelationType.ACTED_IN))
         self.assertEqual((director.person_qid, director.movie_qid, director.relation_type), ("Q20", "Q10", RelationType.DIRECTED))
+
+    def test_relation_parsing_skips_non_entity_values(self):
+        relationships = parse_relation_bindings([
+            {"movie": {"value": "http://www.wikidata.org/entity/Q10"}, "person": {"value": "http://www.wikidata.org/.well-known/genid/unknown"}}
+        ], RelationType.ACTED_IN, "P161")
+        self.assertEqual(relationships, [])
 
     def test_wdqs_client_retries_transient_response(self):
         attempts = 0

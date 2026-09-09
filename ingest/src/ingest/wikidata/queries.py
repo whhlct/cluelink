@@ -17,19 +17,20 @@ def movie_query(
 PREFIX wd: <http://www.wikidata.org/entity/>
 PREFIX wdt: <http://www.wikidata.org/prop/direct/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX wikibase: <http://wikiba.se/ontology#>
+PREFIX schema: <http://schema.org/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
-SELECT ?movie ?label ?sitelinks WHERE {{
+SELECT ?movie ?label (COUNT(DISTINCT ?sitelink) AS ?sitelinks) WHERE {{
   ?movie wdt:P31 wd:Q11424 ;
          wdt:P577 ?release_date ;
          rdfs:label ?label .
+  ?sitelink schema:about ?movie .
   FILTER(LANG(?label) = "en")
   FILTER(?release_date >= "{start_year:04d}-01-01T00:00:00Z"^^xsd:dateTime)
   FILTER(?release_date < "{end_year:04d}-01-01T00:00:00Z"^^xsd:dateTime)
-  BIND(wikibase:sitelinks(?movie) AS ?sitelinks)
-  FILTER(?sitelinks >= {min_sitelinks})
 }}
+GROUP BY ?movie ?label
+HAVING(COUNT(DISTINCT ?sitelink) >= {min_sitelinks})
 """.strip()
 
 
@@ -40,16 +41,17 @@ def movies_without_release_date_query(
 PREFIX wd: <http://www.wikidata.org/entity/>
 PREFIX wdt: <http://www.wikidata.org/prop/direct/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX wikibase: <http://wikiba.se/ontology#>
+PREFIX schema: <http://schema.org/>
 
-SELECT ?movie ?label ?sitelinks WHERE {{
+SELECT ?movie ?label (COUNT(DISTINCT ?sitelink) AS ?sitelinks) WHERE {{
   ?movie wdt:P31 wd:Q11424 ;
          rdfs:label ?label .
+  ?sitelink schema:about ?movie .
   FILTER(LANG(?label) = "en")
   FILTER NOT EXISTS {{ ?movie wdt:P577 ?release_date . }}
-  BIND(wikibase:sitelinks(?movie) AS ?sitelinks)
-  FILTER(?sitelinks >= {min_sitelinks})
 }}
+GROUP BY ?movie ?label
+HAVING(COUNT(DISTINCT ?sitelink) >= {min_sitelinks})
 """.strip()
 
 
@@ -65,14 +67,15 @@ def person_metadata_query(person_qids: list[str]) -> str:
     values = _values_clause(person_qids)
     return f"""
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX wikibase: <http://wikiba.se/ontology#>
+PREFIX schema: <http://schema.org/>
 
-SELECT ?person ?label ?sitelinks WHERE {{
+SELECT ?person ?label (COUNT(DISTINCT ?sitelink) AS ?sitelinks) WHERE {{
   VALUES ?person {{ {values} }}
   ?person rdfs:label ?label .
+  OPTIONAL {{ ?sitelink schema:about ?person . }}
   FILTER(LANG(?label) = "en")
-  OPTIONAL {{ BIND(wikibase:sitelinks(?person) AS ?sitelinks) }}
 }}
+GROUP BY ?person ?label
 """.strip()
 
 

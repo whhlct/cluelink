@@ -44,6 +44,7 @@ async def run(stage: str) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     asyncio.run(run(parse_args().stage))
 
 

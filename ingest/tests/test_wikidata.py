@@ -7,6 +7,13 @@ from domain.enums import RelationType
 from ingest.wikidata.models import qid_from_entity_uri
 from ingest.wikidata.client import WDQSClient
 from ingest.wikidata.movies import parse_movie_bindings
+from ingest.wikidata.movie_metadata import (
+    parse_duration_bindings,
+    parse_genre_bindings,
+    parse_imdb_id_bindings,
+    parse_mpaa_rating_bindings,
+    parse_release_bindings,
+)
 from ingest.wikidata.people import parse_person_bindings
 from ingest.wikidata.queries import movie_query
 from ingest.wikidata.relations import parse_relation_bindings
@@ -45,6 +52,43 @@ class WikidataIngestTests(unittest.TestCase):
         ], RelationType.ACTED_IN, "P161")
         self.assertEqual(relationships, [])
 
+    def test_movie_metadata_parsing(self):
+        movie = "http://www.wikidata.org/entity/Q10"
+        self.assertEqual(parse_imdb_id_bindings([
+            {"movie": {"value": movie}, "imdb_id": {"value": "tt0111161"}}
+        ]), {"Q10": {"tt0111161"}})
+        self.assertEqual(parse_genre_bindings([
+            {
+                "movie": {"value": movie},
+                "genre": {"value": "http://www.wikidata.org/entity/Q130232"},
+                "genre_label": {"value": "drama"},
+            }
+        ])[0].qid, "Q130232")
+        self.assertEqual(parse_duration_bindings([
+            {
+                "movie": {"value": movie},
+                "duration": {"value": "142"},
+                "duration_unit": {"value": "http://www.wikidata.org/entity/Q7727"},
+            }
+        ])["Q10"], {"duration": [{"value": 142.0, "unit": "Q7727"}]})
+        self.assertEqual(parse_mpaa_rating_bindings([
+            {
+                "movie": {"value": movie},
+                "rating": {"value": "http://www.wikidata.org/entity/Q118867"},
+                "rating_label": {"value": "R"},
+            }
+        ])["Q10"], {"mpaa_film_rating": [{"qid": "Q118867", "label": "R"}]})
+        release = parse_release_bindings([
+            {
+                "movie": {"value": movie},
+                "release_date": {"value": "+1994-09-10T00:00:00Z"},
+                "precision": {"value": "11"},
+                "place": {"value": "http://www.wikidata.org/entity/Q30"},
+                "place_label": {"value": "United States"},
+            }
+        ])[0]
+        self.assertEqual((release.release_date.isoformat(), release.precision, release.publication_place_qid), ("1994-09-10", 11, "Q30"))
+
     def test_wdqs_client_retries_transient_response(self):
         attempts = 0
 
@@ -65,4 +109,26 @@ class WikidataIngestTests(unittest.TestCase):
                 await client.aclose()
 
         self.assertEqual(asyncio.run(query()), [{"movie": {"value": "Q1"}}])
+        self.assertEqual(attempts, 2)
+
+    def test_wdqs_client_retries_invalid_json_response(self):
+        attempts = 0
+
+        def handler(request):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return httpx.Response(200, text="temporarily unavailable", request=request)
+            return httpx.Response(200, json={"results": {"bindings": []}}, request=request)
+
+        async def query():
+            client = WDQSClient(retry_count=1, retry_backoff_seconds=0)
+            await client._client.aclose()
+            client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            try:
+                return await client.query("SELECT * WHERE {}")
+            finally:
+                await client.aclose()
+
+        self.assertEqual(asyncio.run(query()), [])
         self.assertEqual(attempts, 2)

@@ -38,7 +38,7 @@ async def ingest_people(client: WDQSClient, store: PostgresWikidataStore, batch_
         people = parse_person_bindings(await client.query(person_metadata_query(qids)))
         for person in people:
             entity_id = store.canonical_id_for_qid(person.qid)
-            await store.upsert_entity(Entity(id=entity_id, name=person.label, entity_type=EntityType.PERSON, external_ids=[ExternalId(source="wikidata", value=person.qid)]))
+            await store.upsert_entity(Entity(id=entity_id, name=person.label, entity_type=EntityType.PERSON, external_ids=[ExternalId(source="wikidata", namespace="wikidata", value=person.qid)]))
             if person.sitelink_count is not None:
                 await store.upsert_metrics(EntityMetrics(entity_id=entity_id, sitelink_count=person.sitelink_count))
         await store.mark_people_processed(qids)

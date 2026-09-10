@@ -10,6 +10,7 @@ from domain.enums import EntityType
 class ExternalId:
     source: str
     value: str
+    namespace: str | None = None
 
 
 @dataclass

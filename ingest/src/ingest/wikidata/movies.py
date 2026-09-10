@@ -47,7 +47,7 @@ async def ingest_movies(
             entity_id = store.canonical_id_for_qid(movie.qid)
             inserted += await store.upsert_entity(Entity(
                 id=entity_id, name=movie.label, entity_type=EntityType.MOVIE,
-                external_ids=[ExternalId(source="wikidata", value=movie.qid)],
+                external_ids=[ExternalId(source="wikidata", namespace="wikidata", value=movie.qid)],
             ))
             await store.upsert_metrics(EntityMetrics(entity_id=entity_id, sitelink_count=movie.sitelink_count))
             await store.mark_movie_selected(movie.qid, entity_id)
@@ -59,7 +59,7 @@ async def ingest_movies(
         movies = parse_movie_bindings(await client.query(movies_without_release_date_query(min_sitelinks)), min_sitelinks)
         for movie in movies:
             entity_id = store.canonical_id_for_qid(movie.qid)
-            await store.upsert_entity(Entity(id=entity_id, name=movie.label, entity_type=EntityType.MOVIE, external_ids=[ExternalId(source="wikidata", value=movie.qid)]))
+            await store.upsert_entity(Entity(id=entity_id, name=movie.label, entity_type=EntityType.MOVIE, external_ids=[ExternalId(source="wikidata", namespace="wikidata", value=movie.qid)]))
             await store.upsert_metrics(EntityMetrics(entity_id=entity_id, sitelink_count=movie.sitelink_count))
             await store.mark_movie_selected(movie.qid, entity_id)
         await store.mark_movie_stage_complete(fallback_stage)

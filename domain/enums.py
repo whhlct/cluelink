@@ -12,6 +12,7 @@ class EntityType(str, Enum):
     COMPANY = "company"
     PLACE = "place"
     COUNTRY = "country"
+    GENRE = "genre"
     SPORTS_TEAM = "sports_team"
     BOOK = "book"
     OTHER = "other"
@@ -30,6 +31,7 @@ class RelationType(str, Enum):
     BORN_IN = "born_in"
     LOCATED_IN = "located_in"
     BASED_ON = "based_on"
+    HAS_GENRE = "has_genre"
 
 
 class Source(str, Enum):

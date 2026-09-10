@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from domain.enums import RelationType
@@ -57,3 +58,19 @@ class WikidataRelationship:
     person_qid: str
     relation_type: RelationType
     source_relation_id: str
+
+
+@dataclass(frozen=True)
+class WikidataGenre:
+    movie_qid: str
+    qid: str
+    label: str
+
+
+@dataclass(frozen=True)
+class WikidataMovieRelease:
+    movie_qid: str
+    release_date: date
+    precision: int
+    publication_place_qid: str | None
+    publication_place_label: str | None

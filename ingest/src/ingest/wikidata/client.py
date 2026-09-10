@@ -62,8 +62,19 @@ class WDQSClient:
                         f"WDQS returned transient HTTP {response.status_code}"
                     )
                 response.raise_for_status()
-                payload: dict[str, Any] = response.json()
-                return payload["results"]["bindings"]
+                try:
+                    payload: dict[str, Any] = response.json()
+                    bindings = payload["results"]["bindings"]
+                    if not isinstance(bindings, list):
+                        raise TypeError("results.bindings is not a list")
+                    return bindings
+                except (KeyError, TypeError, ValueError) as error:
+                    content_type = response.headers.get("content-type", "unknown")
+                    body_preview = response.text.replace("\n", " ")[:200]
+                    raise WDQSClientError(
+                        "WDQS returned an invalid JSON bindings response "
+                        f"(content-type={content_type}, body={body_preview!r})"
+                    ) from error
             except (httpx.RequestError, WDQSClientError) as error:
                 if attempt == self.retry_count:
                     raise WDQSClientError(
@@ -83,7 +94,4 @@ class WDQSClient:
                 raise WDQSClientError(
                     f"WDQS returned HTTP {error.response.status_code}: {error.response.text}"
                 ) from error
-            except (KeyError, ValueError) as error:
-                raise WDQSClientError("WDQS returned an invalid JSON bindings response") from error
-
         raise AssertionError("unreachable")

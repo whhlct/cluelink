@@ -9,13 +9,14 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from domain import Entity, EntityMetrics, Relation
-from domain.enums import RelationType
+from domain.enums import EntityType, RelationType, Source
 from ingest.wikidata.database import (
-    EntityExternalIdRow, EntityMetricsRow, EntityRow, RelationRow,
+    EntityExternalIdRow, EntityMetricsRow, EntityRow, MovieReleaseRow, RelationRow,
+    WikidataMovieMetadataStageRow,
     WikidataMovieStageRow, WikidataPersonRow, WikidataPersonStageRow,
     WikidataRawRelationRow, WikidataRelationBatchRow, WikidataSelectedMovieRow,
 )
-from ingest.wikidata.models import WikidataRelationship
+from ingest.wikidata.models import WikidataGenre, WikidataMovieRelease, WikidataRelationship
 
 
 class PostgresWikidataStore:
@@ -45,10 +46,11 @@ class PostgresWikidataStore:
                 "attributes": entity.attributes,
             }))
             for external_id in entity.external_ids:
+                namespace = external_id.namespace or external_id.source
                 await session.execute(insert(EntityExternalIdRow).values(
-                    entity_id=entity.id, source=external_id.source, value=external_id.value,
+                    entity_id=entity.id, source=external_id.source, namespace=namespace, value=external_id.value,
                 ).on_conflict_do_update(
-                    index_elements=[EntityExternalIdRow.source, EntityExternalIdRow.value],
+                    index_elements=[EntityExternalIdRow.source, EntityExternalIdRow.namespace, EntityExternalIdRow.value],
                     set_={"entity_id": entity.id},
                 ))
         return is_new
@@ -75,6 +77,110 @@ class PostgresWikidataStore:
     async def iter_selected_movie_qids(self) -> AsyncIterator[str]:
         async for value in self._stream(select(WikidataSelectedMovieRow.qid).order_by(WikidataSelectedMovieRow.qid)):
             yield value
+
+    async def movie_metadata_batch_complete(self, batch_key: str) -> bool:
+        return await self._exists(select(WikidataMovieMetadataStageRow.batch_key).where(
+            WikidataMovieMetadataStageRow.batch_key == batch_key
+        ))
+
+    async def upsert_movie_metadata(
+        self,
+        imdb_ids: dict[str, set[str]],
+        genres: Iterable[WikidataGenre],
+        releases: Iterable[WikidataMovieRelease],
+        attributes: dict[str, dict[str, object]],
+    ) -> None:
+        async with self._sessions.begin() as session:
+            for movie_qid, movie_attributes in attributes.items():
+                movie = await session.get(EntityRow, self.canonical_id_for_qid(movie_qid))
+                if movie is not None:
+                    movie.attributes = {**movie.attributes, **movie_attributes}
+
+            for movie_qid, values in imdb_ids.items():
+                movie_id = self.canonical_id_for_qid(movie_qid)
+                for value in values:
+                    await session.execute(insert(EntityExternalIdRow).values(
+                        entity_id=movie_id, source=Source.WIKIDATA.value, namespace="imdb", value=value,
+                    ).on_conflict_do_update(
+                        index_elements=[
+                            EntityExternalIdRow.source,
+                            EntityExternalIdRow.namespace,
+                            EntityExternalIdRow.value,
+                        ],
+                        set_={"entity_id": movie_id},
+                    ))
+
+            for genre in genres:
+                genre_id = self.canonical_id_for_qid(genre.qid)
+                await session.execute(insert(EntityRow).values(
+                    id=genre_id, name=genre.label, entity_type=EntityType.GENRE.value,
+                    aliases=[], description=None, attributes={},
+                ).on_conflict_do_update(index_elements=[EntityRow.id], set_={
+                    "name": genre.label,
+                    "entity_type": EntityType.GENRE.value,
+                }))
+                await session.execute(insert(EntityExternalIdRow).values(
+                    entity_id=genre_id, source=Source.WIKIDATA.value, namespace="wikidata", value=genre.qid,
+                ).on_conflict_do_update(
+                    index_elements=[
+                        EntityExternalIdRow.source,
+                        EntityExternalIdRow.namespace,
+                        EntityExternalIdRow.value,
+                    ],
+                    set_={"entity_id": genre_id},
+                ))
+                await session.execute(insert(RelationRow).values(
+                    source_entity_id=self.canonical_id_for_qid(genre.movie_qid),
+                    target_entity_id=genre_id,
+                    relation_type=RelationType.HAS_GENRE.value,
+                    source=Source.WIKIDATA.value,
+                    source_relation_id="P136",
+                    attributes={},
+                ).on_conflict_do_nothing())
+
+            for release in releases:
+                publication_place_entity_id = None
+                if release.publication_place_qid is not None:
+                    publication_place_entity_id = self.canonical_id_for_qid(release.publication_place_qid)
+                    await session.execute(insert(EntityRow).values(
+                        id=publication_place_entity_id,
+                        name=release.publication_place_label or release.publication_place_qid,
+                        entity_type=EntityType.PLACE.value,
+                        aliases=[], description=None, attributes={},
+                    ).on_conflict_do_nothing())
+                    await session.execute(insert(EntityExternalIdRow).values(
+                        entity_id=publication_place_entity_id,
+                        source=Source.WIKIDATA.value,
+                        namespace="wikidata",
+                        value=release.publication_place_qid,
+                    ).on_conflict_do_update(
+                        index_elements=[
+                            EntityExternalIdRow.source,
+                            EntityExternalIdRow.namespace,
+                            EntityExternalIdRow.value,
+                        ],
+                        set_={"entity_id": publication_place_entity_id},
+                    ))
+
+                release_id = str(uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    "cluelink:movie-release:"
+                    f"{release.movie_qid}:{release.release_date.isoformat()}:"
+                    f"{release.precision}:{release.publication_place_qid or ''}:wikidata",
+                ))
+                await session.execute(insert(MovieReleaseRow).values(
+                    id=release_id,
+                    movie_entity_id=self.canonical_id_for_qid(release.movie_qid),
+                    date=release.release_date,
+                    precision=release.precision,
+                    publication_place_entity_id=publication_place_entity_id,
+                    source=Source.WIKIDATA.value,
+                ).on_conflict_do_nothing())
+
+    async def mark_movie_metadata_batch_complete(self, batch_key: str) -> None:
+        await self._upsert(insert(WikidataMovieMetadataStageRow).values(
+            batch_key=batch_key
+        ).on_conflict_do_nothing())
 
     async def relation_batch_complete(self, batch_key: str) -> bool:
         return await self._exists(select(WikidataRelationBatchRow.batch_key).where(WikidataRelationBatchRow.batch_key == batch_key))
@@ -115,7 +221,9 @@ class PostgresWikidataStore:
     async def entity_id_for_wikidata_qid(self, qid: str) -> str | None:
         async with self._sessions() as session:
             return await session.scalar(select(EntityExternalIdRow.entity_id).where(
-                EntityExternalIdRow.source == "wikidata", EntityExternalIdRow.value == qid
+                EntityExternalIdRow.source == "wikidata",
+                EntityExternalIdRow.namespace == "wikidata",
+                EntityExternalIdRow.value == qid,
             ))
 
     async def upsert_relation(self, relation: Relation) -> bool:

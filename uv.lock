@@ -94,7 +94,7 @@ wheels = [
 [[package]]
 name = "domain"
 version = "0.1.0"
-source = { virtual = "domain" }
+source = { editable = "domain" }
 
 [[package]]
 name = "greenlet"
@@ -217,7 +217,7 @@ dependencies = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "asyncpg", specifier = ">=0.30.0" },
-    { name = "domain", virtual = "domain" },
+    { name = "domain", editable = "domain" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },

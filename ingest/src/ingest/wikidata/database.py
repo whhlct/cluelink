@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from datetime import date
+
+from sqlalchemy import Date, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -24,6 +26,7 @@ class EntityExternalIdRow(Base):
     __tablename__ = "entity_external_ids"
 
     source: Mapped[str] = mapped_column(String, primary_key=True)
+    namespace: Mapped[str] = mapped_column(String, primary_key=True)
     value: Mapped[str] = mapped_column(String, primary_key=True)
     entity_id: Mapped[str] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"), nullable=False)
 
@@ -44,6 +47,11 @@ class EntityMetricsRow(Base):
 class WikidataMovieStageRow(Base):
     __tablename__ = "wikidata_movie_stages"
     stage_key: Mapped[str] = mapped_column(String, primary_key=True)
+
+
+class WikidataMovieMetadataStageRow(Base):
+    __tablename__ = "wikidata_movie_metadata_stages"
+    batch_key: Mapped[str] = mapped_column(String, primary_key=True)
 
 
 class WikidataSelectedMovieRow(Base):
@@ -83,3 +91,14 @@ class RelationRow(Base):
     source: Mapped[str] = mapped_column(String, primary_key=True)
     source_relation_id: Mapped[str | None] = mapped_column(String)
     attributes: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class MovieReleaseRow(Base):
+    __tablename__ = "movie_releases"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    movie_entity_id: Mapped[str] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    precision: Mapped[int] = mapped_column(Integer, nullable=False)
+    publication_place_entity_id: Mapped[str | None] = mapped_column(ForeignKey("entities.id", ondelete="SET NULL"))
+    source: Mapped[str] = mapped_column(String, nullable=False)

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Date, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -36,8 +36,9 @@ class EntityMetricsRow(Base):
 
     entity_id: Mapped[str] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True)
     sitelink_count: Mapped[int | None] = mapped_column(Integer)
-    pageviews_30d: Mapped[int | None] = mapped_column(Integer)
-    pageviews_365d: Mapped[int | None] = mapped_column(Integer)
+    wikipedia_pageviews_30d: Mapped[int | None] = mapped_column(Integer)
+    wikipedia_pageviews_365d: Mapped[int | None] = mapped_column(Integer)
+    wikipedia_pageviews_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     tmdb_popularity: Mapped[float | None]
     tmdb_vote_count: Mapped[int | None] = mapped_column(Integer)
     graph_degree: Mapped[int | None] = mapped_column(Integer)

@@ -54,6 +54,11 @@ class WikidataMovieMetadataStageRow(Base):
     batch_key: Mapped[str] = mapped_column(String, primary_key=True)
 
 
+class WikidataWikipediaSitelinkStageRow(Base):
+    __tablename__ = "wikidata_wikipedia_sitelink_stages"
+    batch_key: Mapped[str] = mapped_column(String, primary_key=True)
+
+
 class WikidataSelectedMovieRow(Base):
     __tablename__ = "wikidata_selected_movies"
     qid: Mapped[str] = mapped_column(String, primary_key=True)

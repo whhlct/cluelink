@@ -17,6 +17,7 @@ from ingest.wikidata.movie_metadata import (
 from ingest.wikidata.people import parse_person_bindings
 from ingest.wikidata.queries import movie_query
 from ingest.wikidata.relations import parse_relation_bindings
+from ingest.wikidata.wikipedia_sitelinks import parse_enwiki_sitelink_bindings
 
 
 class WikidataIngestTests(unittest.TestCase):
@@ -88,6 +89,15 @@ class WikidataIngestTests(unittest.TestCase):
             }
         ])[0]
         self.assertEqual((release.release_date.isoformat(), release.precision, release.publication_place_qid), ("1994-09-10", 11, "Q30"))
+
+    def test_english_wikipedia_sitelink_parsing_keeps_underscored_title(self):
+        sitelinks = parse_enwiki_sitelink_bindings([
+            {
+                "entity": {"value": "http://www.wikidata.org/entity/Q120"},
+                "article": {"value": "https://en.wikipedia.org/wiki/The_Dark_Knight_(film)"},
+            }
+        ])
+        self.assertEqual(sitelinks, {"Q120": "The_Dark_Knight_(film)"})
 
     def test_wdqs_client_retries_transient_response(self):
         attempts = 0

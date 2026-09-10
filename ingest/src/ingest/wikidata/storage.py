@@ -13,6 +13,7 @@ from domain.enums import EntityType, RelationType, Source
 from ingest.wikidata.database import (
     EntityExternalIdRow, EntityMetricsRow, EntityRow, MovieReleaseRow, RelationRow,
     WikidataMovieMetadataStageRow,
+    WikidataWikipediaSitelinkStageRow,
     WikidataMovieStageRow, WikidataPersonRow, WikidataPersonStageRow,
     WikidataRawRelationRow, WikidataRelationBatchRow, WikidataSelectedMovieRow,
 )
@@ -77,6 +78,45 @@ class PostgresWikidataStore:
     async def iter_selected_movie_qids(self) -> AsyncIterator[str]:
         async for value in self._stream(select(WikidataSelectedMovieRow.qid).order_by(WikidataSelectedMovieRow.qid)):
             yield value
+
+    async def iter_wikidata_entity_qids(self, entity_types: Iterable[EntityType]) -> AsyncIterator[str]:
+        query = select(EntityExternalIdRow.value).join(
+            EntityRow, EntityRow.id == EntityExternalIdRow.entity_id
+        ).where(
+            EntityExternalIdRow.source == Source.WIKIDATA.value,
+            EntityExternalIdRow.namespace == "wikidata",
+            EntityRow.entity_type.in_([entity_type.value for entity_type in entity_types]),
+        ).order_by(EntityExternalIdRow.value)
+        async for value in self._stream(query):
+            yield value
+
+    async def wikipedia_sitelink_batch_complete(self, batch_key: str) -> bool:
+        return await self._exists(select(WikidataWikipediaSitelinkStageRow.batch_key).where(
+            WikidataWikipediaSitelinkStageRow.batch_key == batch_key
+        ))
+
+    async def upsert_enwiki_sitelinks(self, sitelinks: dict[str, str]) -> None:
+        async with self._sessions.begin() as session:
+            for qid, title in sitelinks.items():
+                entity_id = self.canonical_id_for_qid(qid)
+                await session.execute(insert(EntityExternalIdRow).values(
+                    entity_id=entity_id,
+                    source=Source.WIKIDATA.value,
+                    namespace="en.wikipedia",
+                    value=title,
+                ).on_conflict_do_update(
+                    index_elements=[
+                        EntityExternalIdRow.source,
+                        EntityExternalIdRow.namespace,
+                        EntityExternalIdRow.value,
+                    ],
+                    set_={"entity_id": entity_id},
+                ))
+
+    async def mark_wikipedia_sitelink_batch_complete(self, batch_key: str) -> None:
+        await self._upsert(insert(WikidataWikipediaSitelinkStageRow).values(
+            batch_key=batch_key
+        ).on_conflict_do_nothing())
 
     async def movie_metadata_batch_complete(self, batch_key: str) -> bool:
         return await self._exists(select(WikidataMovieMetadataStageRow.batch_key).where(

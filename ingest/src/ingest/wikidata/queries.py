@@ -174,6 +174,20 @@ SELECT ?movie ?release_date ?precision ?place ?place_label WHERE {{
 """.strip()
 
 
+def enwiki_sitelink_query(entity_qids: list[str]) -> str:
+    values = _values_clause(entity_qids)
+    return f"""
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX schema: <http://schema.org/>
+
+SELECT ?entity ?article WHERE {{
+  VALUES ?entity {{ {values} }}
+  ?article schema:about ?entity ;
+           schema:isPartOf <https://en.wikipedia.org/> .
+}}
+""".strip()
+
+
 def _movie_value_query(movie_qids: list[str], property_id: str, value_name: str) -> str:
     values = _values_clause(movie_qids)
     return f"""

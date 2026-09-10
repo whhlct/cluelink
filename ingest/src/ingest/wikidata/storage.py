@@ -12,6 +12,7 @@ from domain import Entity, EntityMetrics, Relation
 from domain.enums import EntityType, RelationType, Source
 from ingest.wikidata.database import (
     EntityExternalIdRow, EntityMetricsRow, EntityRow, MovieReleaseRow, RelationRow,
+    WikipediaPageviewStageRow,
     WikidataMovieMetadataStageRow,
     WikidataWikipediaSitelinkStageRow,
     WikidataMovieStageRow, WikidataPersonRow, WikidataPersonStageRow,
@@ -61,7 +62,11 @@ class PostgresWikidataStore:
         async with self._sessions.begin() as session:
             await session.execute(insert(EntityMetricsRow).values(**values).on_conflict_do_update(
                 index_elements=[EntityMetricsRow.entity_id],
-                set_={key: value for key, value in values.items() if key != "entity_id"},
+                set_={
+                    key: value
+                    for key, value in values.items()
+                    if key != "entity_id" and value is not None
+                },
             ))
 
     async def mark_movie_selected(self, qid: str, entity_id: str) -> None:
@@ -117,6 +122,40 @@ class PostgresWikidataStore:
         await self._upsert(insert(WikidataWikipediaSitelinkStageRow).values(
             batch_key=batch_key
         ).on_conflict_do_nothing())
+
+    async def iter_pending_wikipedia_pageviews(self) -> AsyncIterator[tuple[str, str]]:
+        query = select(EntityExternalIdRow.entity_id, EntityExternalIdRow.value).outerjoin(
+            WikipediaPageviewStageRow,
+            WikipediaPageviewStageRow.entity_id == EntityExternalIdRow.entity_id,
+        ).where(
+            EntityExternalIdRow.source == Source.WIKIDATA.value,
+            EntityExternalIdRow.namespace == "en.wikipedia",
+            WikipediaPageviewStageRow.entity_id.is_(None),
+        ).order_by(EntityExternalIdRow.entity_id)
+        async with self._sessions() as session:
+            stream = await session.stream(query)
+            async for entity_id, title in stream:
+                yield entity_id, title
+
+    async def upsert_wikipedia_pageview_metrics(self, metrics: Iterable[EntityMetrics]) -> None:
+        async with self._sessions.begin() as session:
+            for metric in metrics:
+                values = asdict(metric)
+                await session.execute(insert(EntityMetricsRow).values(**values).on_conflict_do_update(
+                    index_elements=[EntityMetricsRow.entity_id],
+                    set_={
+                        key: value
+                        for key, value in values.items()
+                        if key != "entity_id" and value is not None
+                    },
+                ))
+                await session.execute(insert(WikipediaPageviewStageRow).values(
+                    entity_id=metric.entity_id,
+                    fetched_at=metric.wikipedia_pageviews_fetched_at,
+                ).on_conflict_do_update(
+                    index_elements=[WikipediaPageviewStageRow.entity_id],
+                    set_={"fetched_at": metric.wikipedia_pageviews_fetched_at},
+                ))
 
     async def movie_metadata_batch_complete(self, batch_key: str) -> bool:
         return await self._exists(select(WikidataMovieMetadataStageRow.batch_key).where(

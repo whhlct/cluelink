@@ -12,6 +12,7 @@ from ingest.wikidata.client import WDQSClient
 from ingest.wikidata.movies import ingest_movies
 from ingest.wikidata.movie_metadata import ingest_movie_metadata
 from ingest.wikidata.people import ingest_people
+from ingest.wikidata.pageviews import ingest_wikipedia_pageviews
 from ingest.wikidata.relations import discover_relations, finalize_relations
 from ingest.wikidata.storage import PostgresWikidataStore
 from ingest.wikidata.wikipedia_sitelinks import ingest_wikipedia_sitelinks
@@ -21,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ingest the Wikidata movie graph")
     parser.add_argument(
         "stage",
-        choices=["movies", "movie-metadata", "relations", "people", "wikipedia-sitelinks", "finalize-relations", "all"],
+        choices=["movies", "movie-metadata", "relations", "people", "wikipedia-sitelinks", "wikipedia-pageviews", "finalize-relations", "all"],
     )
     return parser.parse_args()
 
@@ -44,6 +45,8 @@ async def run(stage: str) -> None:
                 await ingest_people(client, store)
             if stage in {"wikipedia-sitelinks", "all"}:
                 await ingest_wikipedia_sitelinks(client, store)
+            if stage in {"wikipedia-pageviews", "all"}:
+                await ingest_wikipedia_pageviews(store)
         if stage in {"finalize-relations", "all"}:
             await finalize_relations(store)
 

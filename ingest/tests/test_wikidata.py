@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from datetime import date
 
 import httpx
 
@@ -15,6 +16,7 @@ from ingest.wikidata.movie_metadata import (
     parse_release_bindings,
 )
 from ingest.wikidata.people import parse_person_bindings
+from ingest.wikidata.pageviews import calculate_pageview_totals
 from ingest.wikidata.queries import movie_query
 from ingest.wikidata.relations import parse_relation_bindings
 from ingest.wikidata.wikipedia_sitelinks import parse_enwiki_sitelink_bindings
@@ -98,6 +100,14 @@ class WikidataIngestTests(unittest.TestCase):
             }
         ])
         self.assertEqual(sitelinks, {"Q120": "The_Dark_Knight_(film)"})
+
+    def test_pageview_totals_use_30_day_window_within_365_day_response(self):
+        totals = calculate_pageview_totals([
+            {"timestamp": "2025080100", "views": 10},
+            {"timestamp": "2025070200", "views": 20},
+            {"timestamp": "2025070100", "views": 30},
+        ], end=date(2025, 8, 1))
+        self.assertEqual((totals.pageviews_30d, totals.pageviews_365d), (10, 60))
 
     def test_wdqs_client_retries_transient_response(self):
         attempts = 0

@@ -60,6 +60,13 @@ class WikidataWikipediaSitelinkStageRow(Base):
     batch_key: Mapped[str] = mapped_column(String, primary_key=True)
 
 
+class WikipediaPageviewStageRow(Base):
+    __tablename__ = "wikipedia_pageview_stages"
+
+    entity_id: Mapped[str] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class WikidataSelectedMovieRow(Base):
     __tablename__ = "wikidata_selected_movies"
     qid: Mapped[str] = mapped_column(String, primary_key=True)

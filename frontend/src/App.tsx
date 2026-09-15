@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, MouseEvent, useEffect, useState } from "react";
 
 // In development Vite proxies /v1 to the backend, avoiding browser-to-WSL port forwarding.
 // Set VITE_API_URL when deploying the static client with a separately hosted API.
@@ -9,6 +9,8 @@ const DIFFICULTIES = ["easy", "medium", "hard"] as const;
 
 type Entity = { id: string; name: string; entity_type: string };
 type GameRoute = { puzzleType: string; difficulty: string };
+type AdminPuzzleSummary = { puzzle_type: string; difficulty: string; count: number };
+type AdminPuzzle = { id: string; status: string; source_entities: Entity[]; target_entity: Entity };
 type Session = {
   session_id: string;
   status: "active" | "won" | "failed";
@@ -35,6 +37,10 @@ function routeFromLocation(): GameRoute | null {
   return { puzzleType, difficulty };
 }
 
+function isAdminLocation(): boolean {
+  return window.location.pathname === "/admin/puzzles";
+}
+
 function EntityPicker({ onSelect, entityType }: { onSelect: (entity: Entity) => void; entityType?: string }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Entity[]>([]);
@@ -52,12 +58,62 @@ function EntityPicker({ onSelect, entityType }: { onSelect: (entity: Entity) => 
   </div>;
 }
 
+function AdminPuzzles({ onPlay }: { onPlay: (puzzleId: string) => void }) {
+  const [summaries, setSummaries] = useState<AdminPuzzleSummary[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [puzzles, setPuzzles] = useState<Record<string, AdminPuzzle[]>>({});
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    request<AdminPuzzleSummary[]>("/v1/admin/puzzles").then(setSummaries).catch((cause) => {
+      setError(cause instanceof Error ? cause.message : "Could not load puzzle inventory");
+    });
+  }, []);
+
+  const toggle = (summary: AdminPuzzleSummary) => {
+    const key = `${summary.puzzle_type}/${summary.difficulty}`;
+    if (expanded === key) return setExpanded(null);
+    setExpanded(key);
+    if (puzzles[key]) return;
+    request<AdminPuzzle[]>(`/v1/admin/puzzles/${summary.puzzle_type}/${summary.difficulty}`).then((items) => {
+      setPuzzles((current) => ({ ...current, [key]: items }));
+    }).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load puzzles"));
+  };
+
+  return <section className="card admin-puzzles">
+    <h2>Puzzle inventory</h2>
+    <p>Generated puzzles grouped by type and difficulty.</p>
+    {error && <p className="error" role="alert">{error}</p>}
+    <ul className="admin-groups">
+      {summaries.map((summary) => {
+        const key = `${summary.puzzle_type}/${summary.difficulty}`;
+        const items = puzzles[key];
+        return <li key={key}>
+          <button className="group-button" onClick={() => toggle(summary)}>
+            {expanded === key ? "Hide" : "Show"} {summary.puzzle_type.replace("_", " ")} · {summary.difficulty} <strong>{summary.count}</strong>
+          </button>
+          {expanded === key && <ul className="admin-puzzle-list">
+            {!items && <li>Loading puzzles…</li>}
+            {items?.map((puzzle) => <li key={puzzle.id}>
+              <code>{puzzle.id}</code>
+              <span>{puzzle.source_entities.map((entity) => entity.name).join(" + ")} → {puzzle.target_entity.name}</span>
+              <small>{puzzle.status}</small>
+              <button disabled={puzzle.status !== "published"} onClick={() => onPlay(puzzle.id)}>Play</button>
+            </li>)}
+          </ul>}
+        </li>;
+      })}
+    </ul>
+  </section>;
+}
+
 export function App() {
   const initialRoute = routeFromLocation();
   const [session, setSession] = useState<Session | null>(null);
   const [puzzleType, setPuzzleType] = useState(initialRoute?.puzzleType ?? "connection");
   const [difficulty, setDifficulty] = useState(initialRoute?.difficulty ?? "easy");
   const [route, setRoute] = useState<GameRoute | null>(initialRoute);
+  const [adminPage, setAdminPage] = useState(isAdminLocation());
   const [error, setError] = useState("");
   const [hint, setHint] = useState<Record<string, unknown> | null>(null);
   const [givingUp, setGivingUp] = useState(false);
@@ -66,6 +122,7 @@ export function App() {
     const nextRoute = { puzzleType: next.puzzle.type, difficulty: next.puzzle.difficulty };
     const path = `/${nextRoute.puzzleType}/${nextRoute.difficulty}`;
     if (window.location.pathname !== path) window.history.pushState({}, "", path);
+    setAdminPage(false);
     setRoute(nextRoute);
   };
 
@@ -81,12 +138,16 @@ export function App() {
   };
 
   useEffect(() => {
-    const onPopState = () => setRoute(routeFromLocation());
+    const onPopState = () => {
+      setAdminPage(isAdminLocation());
+      setRoute(routeFromLocation());
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   useEffect(() => {
+    if (adminPage) return;
     if (route) {
       setPuzzleType(route.puzzleType);
       setDifficulty(route.difficulty);
@@ -109,7 +170,7 @@ export function App() {
       if (!cancelled) setError(cause instanceof Error ? cause.message : "Request failed");
     });
     return () => { cancelled = true; };
-  }, [route]);
+  }, [adminPage, route]);
 
   const start = (event: FormEvent) => {
     event.preventDefault();
@@ -119,24 +180,34 @@ export function App() {
   const playAnother = () => {
     localStorage.removeItem(LAST_SESSION_KEY);
     window.history.pushState({}, "", "/");
+    setAdminPage(false);
     setRoute(null);
     setSession(null);
     setHint(null);
     setGivingUp(false);
   };
+  const openAdmin = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    window.history.pushState({}, "", "/admin/puzzles");
+    setAdminPage(true);
+    setRoute(null);
+    setSession(null);
+    setHint(null);
+  };
   const terminal = session && session.status !== "active";
   const payload = session?.puzzle.payload;
 
   return <main>
-    <header><h1>Cluelink</h1><p>Find the film-world connection.</p></header>
+    <header><h1>Cluelink</h1><p>Find the film-world connection.</p><a href="/admin/puzzles" onClick={openAdmin}>Admin</a></header>
     {error && <p className="error" role="alert">{error}</p>}
-    {!session && <form className="card" onSubmit={start}>
+    {adminPage && <AdminPuzzles onPlay={(puzzleId) => update(() => request<Session>(`/v1/admin/puzzles/${puzzleId}/sessions`, { method: "POST" }))} />}
+    {!adminPage && !session && <form className="card" onSubmit={start}>
       <h2>Start a puzzle</h2>
       <label>Mode<select value={puzzleType} onChange={(event) => setPuzzleType(event.target.value)}><option value="connection">Connection path</option><option value="hidden_entity">Hidden entity</option><option value="common_link">Common link</option></select></label>
       <label>Difficulty<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
       <button type="submit">Play</button>
     </form>}
-    {session && <section className="card">
+    {!adminPage && session && <section className="card">
       <div className="meta"><span>{session.puzzle.type.replace("_", " ")}</span><span>{session.puzzle.difficulty}</span></div>
       <h2>{String(payload?.prompt ?? "")}</h2>
       {Array.isArray(payload?.clues) && <ul className="clues">{(payload.clues as Entity[]).map((clue) => <li key={clue.id}>{clue.name}</li>)}</ul>}

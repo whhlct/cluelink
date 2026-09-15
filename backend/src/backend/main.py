@@ -106,6 +106,21 @@ def create_app() -> FastAPI:
     async def entities(query: str = Query(min_length=1), entity_type: str | None = None) -> list[dict[str, object]]:
         return [node.payload() for node in games().graph.search(query, entity_type)]
 
+    @app.get("/v1/admin/puzzles")
+    async def admin_puzzle_counts() -> list[dict[str, object]]:
+        return await games().admin_puzzle_counts()
+
+    @app.get("/v1/admin/puzzles/{puzzle_type}/{difficulty}")
+    async def admin_puzzles(puzzle_type: str, difficulty: str) -> list[dict[str, object]]:
+        return await games().admin_puzzles(puzzle_type, difficulty)
+
+    @app.post("/v1/admin/puzzles/{puzzle_id}/sessions")
+    async def admin_start_puzzle(puzzle_id: str) -> dict[str, object]:
+        try:
+            return await games().create_session_for_puzzle(puzzle_id)
+        except GameError as error:
+            raise api_error(error)
+
     @app.post("/v1/admin/puzzles/{puzzle_id}/disable", status_code=204)
     async def disable(puzzle_id: str, request: DisableRequest, x_admin_token: str | None = Header(default=None)) -> None:
         expected = os.environ.get("ADMIN_TOKEN")

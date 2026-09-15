@@ -31,18 +31,50 @@ class GameService:
             puzzle = await session.scalar(query.order_by(func.random()).limit(1))
             if puzzle is None:
                 raise GameError(404, "No published puzzle matches the requested filters")
-            now = datetime.now(timezone.utc)
-            payload = puzzle.public_payload
-            game = GameSessionRow(
-                id=str(uuid.uuid4()), puzzle_id=puzzle.id, status="active",
-                current_entity_id=payload.get("start", {}).get("id") if puzzle.puzzle_type == "connection" else None,
-                move_count=0, guess_count=0, wrong_guess_count=0, hint_count=0,
-                guessed_entity_ids=[], started_at=now, updated_at=now,
+            return await self._create_session(session, puzzle)
+
+    async def create_session_for_puzzle(self, puzzle_id: str) -> dict[str, object]:
+        async with self.database.sessions.begin() as session:
+            puzzle = await session.get(PuzzleRow, puzzle_id)
+            if puzzle is None:
+                raise GameError(404, "Puzzle not found")
+            if puzzle.status != "published":
+                raise GameError(422, "Only published puzzles can be played")
+            return await self._create_session(session, puzzle)
+
+    async def admin_puzzle_counts(self) -> list[dict[str, object]]:
+        async with self.database.sessions() as session:
+            rows = await session.execute(
+                select(PuzzleRow.puzzle_type, PuzzleRow.difficulty, func.count(PuzzleRow.id).label("count"))
+                .group_by(PuzzleRow.puzzle_type, PuzzleRow.difficulty)
+                .order_by(PuzzleRow.puzzle_type, PuzzleRow.difficulty)
             )
-            session.add(game)
-            await self._event(session, game, "started", {})
-            await session.flush()
-            return await self._payload(session, game, puzzle)
+            return [
+                {"puzzle_type": row.puzzle_type, "difficulty": row.difficulty, "count": row.count}
+                for row in rows
+            ]
+
+    async def admin_puzzles(self, puzzle_type: str, difficulty: str) -> list[dict[str, object]]:
+        async with self.database.sessions() as session:
+            puzzles = (await session.scalars(
+                select(PuzzleRow)
+                .where(PuzzleRow.puzzle_type == puzzle_type, PuzzleRow.difficulty == difficulty)
+                .order_by(PuzzleRow.created_at.desc())
+            )).all()
+            details: list[dict[str, object]] = []
+            for puzzle in puzzles:
+                solution = await session.get(PuzzleSolutionRow, puzzle.id)
+                assert solution is not None
+                payload = puzzle.public_payload
+                sources = [payload["start"]] if puzzle.puzzle_type == "connection" else payload.get("clues", [])
+                target = payload["target"] if puzzle.puzzle_type == "connection" else solution.solution_payload["canonical_answer"]
+                details.append({
+                    "id": puzzle.id,
+                    "status": puzzle.status,
+                    "source_entities": sources,
+                    "target_entity": target,
+                })
+            return details
 
     async def get_session(self, session_id: str) -> dict[str, object]:
         async with self.database.sessions.begin() as session:
@@ -143,6 +175,20 @@ class GameService:
             puzzle.status = "disabled"
             puzzle.disabled_reason = reason
             puzzle.disabled_at = datetime.now(timezone.utc)
+
+    async def _create_session(self, session, puzzle: PuzzleRow) -> dict[str, object]:
+        now = datetime.now(timezone.utc)
+        payload = puzzle.public_payload
+        game = GameSessionRow(
+            id=str(uuid.uuid4()), puzzle_id=puzzle.id, status="active",
+            current_entity_id=payload.get("start", {}).get("id") if puzzle.puzzle_type == "connection" else None,
+            move_count=0, guess_count=0, wrong_guess_count=0, hint_count=0,
+            guessed_entity_ids=[], started_at=now, updated_at=now,
+        )
+        session.add(game)
+        await self._event(session, game, "started", {})
+        await session.flush()
+        return await self._payload(session, game, puzzle)
 
     async def _locked_game(self, session, session_id: str) -> tuple[GameSessionRow, PuzzleRow]:
         game = await session.scalar(select(GameSessionRow).where(GameSessionRow.id == session_id).with_for_update())

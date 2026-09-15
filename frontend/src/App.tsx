@@ -4,8 +4,11 @@ import { FormEvent, useEffect, useState } from "react";
 // Set VITE_API_URL when deploying the static client with a separately hosted API.
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const LAST_SESSION_KEY = "cluelink:last-session";
+const PUZZLE_TYPES = ["connection", "hidden_entity", "common_link"] as const;
+const DIFFICULTIES = ["easy", "medium", "hard"] as const;
 
 type Entity = { id: string; name: string; entity_type: string };
+type GameRoute = { puzzleType: string; difficulty: string };
 type Session = {
   session_id: string;
   status: "active" | "won" | "failed";
@@ -26,6 +29,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return response.status === 204 ? (undefined as T) : response.json();
 }
 
+function routeFromLocation(): GameRoute | null {
+  const [puzzleType, difficulty, ...remaining] = window.location.pathname.split("/").filter(Boolean);
+  if (remaining.length > 0 || !PUZZLE_TYPES.includes(puzzleType as typeof PUZZLE_TYPES[number]) || !DIFFICULTIES.includes(difficulty as typeof DIFFICULTIES[number])) return null;
+  return { puzzleType, difficulty };
+}
+
 function EntityPicker({ onSelect, entityType }: { onSelect: (entity: Entity) => void; entityType?: string }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Entity[]>([]);
@@ -44,12 +53,21 @@ function EntityPicker({ onSelect, entityType }: { onSelect: (entity: Entity) => 
 }
 
 export function App() {
+  const initialRoute = routeFromLocation();
   const [session, setSession] = useState<Session | null>(null);
-  const [puzzleType, setPuzzleType] = useState("connection");
-  const [difficulty, setDifficulty] = useState("easy");
+  const [puzzleType, setPuzzleType] = useState(initialRoute?.puzzleType ?? "connection");
+  const [difficulty, setDifficulty] = useState(initialRoute?.difficulty ?? "easy");
+  const [route, setRoute] = useState<GameRoute | null>(initialRoute);
   const [error, setError] = useState("");
   const [hint, setHint] = useState<Record<string, unknown> | null>(null);
   const [givingUp, setGivingUp] = useState(false);
+
+  const navigateToGame = (next: Session) => {
+    const nextRoute = { puzzleType: next.puzzle.type, difficulty: next.puzzle.difficulty };
+    const path = `/${nextRoute.puzzleType}/${nextRoute.difficulty}`;
+    if (window.location.pathname !== path) window.history.pushState({}, "", path);
+    setRoute(nextRoute);
+  };
 
   const update = async (action: () => Promise<Session>) => {
     try {
@@ -58,20 +76,54 @@ export function App() {
       setSession(next);
       setHint(next.hint ?? null);
       localStorage.setItem(LAST_SESSION_KEY, next.session_id);
+      navigateToGame(next);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Request failed"); }
   };
 
   useEffect(() => {
-    const sessionId = localStorage.getItem(LAST_SESSION_KEY);
-    if (sessionId) update(() => request<Session>(`/v1/sessions/${sessionId}`));
+    const onPopState = () => setRoute(routeFromLocation());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
+
+  useEffect(() => {
+    if (route) {
+      setPuzzleType(route.puzzleType);
+      setDifficulty(route.difficulty);
+    }
+    const sessionId = localStorage.getItem(LAST_SESSION_KEY);
+    if (!sessionId) return;
+    let cancelled = false;
+    request<Session>(`/v1/sessions/${sessionId}`).then((next) => {
+      if (cancelled) return;
+      const matchesRoute = !route || (next.puzzle.type === route.puzzleType && next.puzzle.difficulty === route.difficulty);
+      if (!matchesRoute) {
+        setSession(null);
+        setHint(null);
+        return;
+      }
+      setSession(next);
+      setHint(next.hint ?? null);
+      if (!route) navigateToGame(next);
+    }).catch((cause) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : "Request failed");
+    });
+    return () => { cancelled = true; };
+  }, [route]);
 
   const start = (event: FormEvent) => {
     event.preventDefault();
     update(() => request<Session>("/v1/sessions", { method: "POST", body: JSON.stringify({ puzzle_type: puzzleType, difficulty }) }));
   };
 
-  const playAnother = () => { localStorage.removeItem(LAST_SESSION_KEY); setSession(null); setHint(null); setGivingUp(false); };
+  const playAnother = () => {
+    localStorage.removeItem(LAST_SESSION_KEY);
+    window.history.pushState({}, "", "/");
+    setRoute(null);
+    setSession(null);
+    setHint(null);
+    setGivingUp(false);
+  };
   const terminal = session && session.status !== "active";
   const payload = session?.puzzle.payload;
 

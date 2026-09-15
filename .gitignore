@@ -14,5 +14,8 @@ wheels/
 
 # Downloaded ingest artifacts
 data/
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
 
 data/

@@ -10,12 +10,14 @@ from sqlalchemy.pool import NullPool
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
+sys.path.insert(0, str(REPOSITORY_ROOT / "backend" / "src"))
 
+from backend.models import GameBase
 from ingest.wikidata.database import Base
 
 
 config = context.config
-target_metadata = Base.metadata
+target_metadata = [Base.metadata, GameBase.metadata]
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 

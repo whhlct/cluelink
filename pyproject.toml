@@ -7,4 +7,4 @@ requires-python = ">=3.13"
 dependencies = []
 
 [tool.uv.workspace]
-members = ["ingest", "domain"]
+members = ["ingest", "domain", "backend", "generation"]

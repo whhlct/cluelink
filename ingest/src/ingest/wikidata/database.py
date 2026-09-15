@@ -67,6 +67,14 @@ class WikipediaPageviewStageRow(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class WikipediaMonthlyPageviewRow(Base):
+    __tablename__ = "wikipedia_monthly_pageviews"
+
+    entity_id: Mapped[str] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True)
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    pageviews: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class WikidataSelectedMovieRow(Base):
     __tablename__ = "wikidata_selected_movies"
     qid: Mapped[str] = mapped_column(String, primary_key=True)

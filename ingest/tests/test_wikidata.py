@@ -1,6 +1,8 @@
 import asyncio
 import unittest
 from datetime import date
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
 import httpx
 
@@ -8,6 +10,12 @@ from domain.enums import RelationType
 from ingest.wikidata.models import qid_from_entity_uri
 from ingest.wikidata.client import WDQSClient
 from ingest.wikidata.movies import parse_movie_bindings
+from ingest.wikidata.monthly_pageviews import (
+    aggregate_enwiki_monthly_pageviews,
+    monthly_dump,
+    parse_monthly_pageview_line,
+    previous_month,
+)
 from ingest.wikidata.movie_metadata import (
     parse_duration_bindings,
     parse_genre_bindings,
@@ -108,6 +116,31 @@ class WikidataIngestTests(unittest.TestCase):
             {"timestamp": "2025070100", "views": 30},
         ], end=date(2025, 8, 1))
         self.assertEqual((totals.pageviews_30d, totals.pageviews_365d), (10, 60))
+
+    def test_monthly_pageview_dump_uses_previous_month_and_expected_filename(self):
+        self.assertEqual(previous_month(date(2026, 9, 9)), date(2026, 8, 1))
+        dump = monthly_dump(date(2026, 8, 1))
+        self.assertEqual(dump.compressed_path.name, "pageviews-202608-user.bz2")
+        self.assertEqual(dump.extracted_path.name, "pageviews-202608-user")
+
+    def test_monthly_pageview_aggregation_sums_access_types_per_title(self):
+        self.assertEqual(
+            parse_monthly_pageview_line(b"en.wikipedia The_Dark_Knight_(film) 123 desktop 10 A10\n"),
+            ("en.wikipedia", "The_Dark_Knight_(film)", "123", "desktop", 10),
+        )
+        with TemporaryDirectory() as directory:
+            dump = monthly_dump(date(2026, 8, 1), Path(directory))
+            dump.extracted_path.write_bytes(
+                b"en.wikipedia The_Dark_Knight_(film) 123 desktop 10 A10\n"
+                b"en.wikipedia The_Dark_Knight_(film) 123 mobile-web 5 A5\n"
+                b"en.wikipedia Zed 124 desktop 2 A2\n"
+                b"fr.wikipedia Zed 124 desktop 100 A100\n"
+            )
+            aggregate_enwiki_monthly_pageviews(dump)
+            self.assertEqual(
+                dump.aggregate_path.read_text(encoding="utf-8"),
+                "The_Dark_Knight_(film)\t15\nZed\t2\n",
+            )
 
     def test_wdqs_client_retries_transient_response(self):
         attempts = 0

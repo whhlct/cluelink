@@ -12,4 +12,7 @@ wheels/
 # .env files
 .env
 
+# Downloaded ingest artifacts
+data/
+
 data/

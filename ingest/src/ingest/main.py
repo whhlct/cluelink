@@ -11,6 +11,11 @@ from dotenv import load_dotenv
 from ingest.wikidata.client import WDQSClient
 from ingest.wikidata.movies import ingest_movies
 from ingest.wikidata.movie_metadata import ingest_movie_metadata
+from ingest.wikidata.monthly_pageviews import (
+    aggregate_enwiki_monthly_pageviews,
+    download_and_extract_monthly_pageviews,
+    ingest_monthly_pageviews,
+)
 from ingest.wikidata.people import ingest_people
 from ingest.wikidata.pageviews import ingest_wikipedia_pageviews
 from ingest.wikidata.relations import discover_relations, finalize_relations
@@ -22,13 +27,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ingest the Wikidata movie graph")
     parser.add_argument(
         "stage",
-        choices=["movies", "movie-metadata", "relations", "people", "wikipedia-sitelinks", "wikipedia-pageviews", "finalize-relations", "all"],
+        choices=["movies", "movie-metadata", "relations", "people", "wikipedia-sitelinks", "wikipedia-pageviews", "monthly-pageviews-download", "monthly-pageviews-process", "monthly-pageviews-ingest", "finalize-relations", "all"],
     )
     return parser.parse_args()
 
 
 async def run(stage: str) -> None:
     load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+    if stage == "monthly-pageviews-download":
+        await download_and_extract_monthly_pageviews()
+        return
+    if stage == "monthly-pageviews-process":
+        dump = await download_and_extract_monthly_pageviews()
+        await asyncio.to_thread(aggregate_enwiki_monthly_pageviews, dump)
+        return
+
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL must be set before running the Wikidata ingest")
@@ -47,6 +60,10 @@ async def run(stage: str) -> None:
                 await ingest_wikipedia_sitelinks(client, store)
             if stage in {"wikipedia-pageviews", "all"}:
                 await ingest_wikipedia_pageviews(store)
+            if stage == "monthly-pageviews-ingest":
+                dump = await download_and_extract_monthly_pageviews()
+                aggregate_enwiki_monthly_pageviews(dump)
+                await ingest_monthly_pageviews(store, dump)
         if stage in {"finalize-relations", "all"}:
             await finalize_relations(store)
 

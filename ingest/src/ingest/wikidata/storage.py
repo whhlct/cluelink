@@ -12,6 +12,7 @@ from domain import Entity, EntityMetrics, Relation
 from domain.enums import EntityType, RelationType, Source
 from ingest.wikidata.database import (
     EntityExternalIdRow, EntityMetricsRow, EntityRow, MovieReleaseRow, RelationRow,
+    WikipediaMonthlyPageviewRow,
     WikipediaPageviewStageRow,
     WikidataMovieMetadataStageRow,
     WikidataWikipediaSitelinkStageRow,
@@ -156,6 +157,30 @@ class PostgresWikidataStore:
                     index_elements=[WikipediaPageviewStageRow.entity_id],
                     set_={"fetched_at": metric.wikipedia_pageviews_fetched_at},
                 ))
+
+    async def enwiki_sitelink_entity_ids(self) -> dict[str, str]:
+        query = select(EntityExternalIdRow.value, EntityExternalIdRow.entity_id).where(
+            EntityExternalIdRow.source == Source.WIKIDATA.value,
+            EntityExternalIdRow.namespace == "en.wikipedia",
+        )
+        async with self._sessions() as session:
+            return dict((await session.execute(query)).all())
+
+    async def upsert_monthly_wikipedia_pageviews(
+        self, month: object, pageviews: Iterable[tuple[str, int]]
+    ) -> None:
+        values = [
+            {"entity_id": entity_id, "month": month, "pageviews": views}
+            for entity_id, views in pageviews
+        ]
+        if not values:
+            return
+        async with self._sessions.begin() as session:
+            statement = insert(WikipediaMonthlyPageviewRow).values(values)
+            await session.execute(statement.on_conflict_do_update(
+                index_elements=[WikipediaMonthlyPageviewRow.entity_id, WikipediaMonthlyPageviewRow.month],
+                set_={"pageviews": statement.excluded.pageviews},
+            ))
 
     async def movie_metadata_batch_complete(self, batch_key: str) -> bool:
         return await self._exists(select(WikidataMovieMetadataStageRow.batch_key).where(

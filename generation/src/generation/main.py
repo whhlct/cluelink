@@ -83,7 +83,8 @@ async def generate(count: int, seed: int | None) -> dict[str, int]:
                 attempts = 0
                 while created < count and attempts < count * 500:
                     attempts += 1
-                    draft = generator.generate(difficulty)
+                    candidate = generator.generate(difficulty)
+                    draft = generator.validate_and_score(candidate) if candidate is not None else None
                     if draft is None or draft.fingerprint in fingerprints:
                         rejected += 1
                         continue

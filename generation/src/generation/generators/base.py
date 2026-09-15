@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import random
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from backend.core import CoreGraph
+from backend.core import CoreGraph, GraphNode
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class PuzzleGenerator(ABC):
     """Shared graph eligibility, policy, and draft construction for one puzzle type."""
 
     puzzle_type: str
+    minimum_score: float
 
     def __init__(self, graph: CoreGraph, random_source: random.Random) -> None:
         self.graph = graph
@@ -42,12 +44,41 @@ class PuzzleGenerator(ABC):
     def generate(self, difficulty: str) -> PuzzleDraft | None:
         """Return one validated puzzle candidate, or None when the sample is invalid."""
 
+    @abstractmethod
+    def score(self, draft: PuzzleDraft) -> tuple[float, dict[str, float]]:
+        """Return a 0-100 weighted score and the normalized factors that produced it."""
+
+    def validate_and_score(self, draft: PuzzleDraft) -> PuzzleDraft | None:
+        """Reject low-quality candidates and persist the scoring rationale on accepted ones."""
+        score, factors = self.score(draft)
+        if score < self.minimum_score:
+            return None
+        quality = {
+            **draft.quality,
+            "score": {
+                "total": round(score, 2),
+                "minimum": self.minimum_score,
+                "factors": {name: round(value, 4) for name, value in factors.items()},
+            },
+        }
+        return replace(draft, quality=quality)
+
     def neighbors_of_type(self, node_id: str, entity_type: str) -> list[str]:
         return [
             edge.other_id
             for edge in self.graph.adjacency[node_id]
             if self.graph.nodes[edge.other_id].entity_type == entity_type
         ]
+
+    def popularity_quality(self, node: GraphNode, benchmark: str) -> float:
+        """Normalize pageviews against the configured popularity eligibility threshold."""
+        threshold = self.anchor_thresholds[node.entity_type] if benchmark == "anchor" else self.intermediate_thresholds[node.entity_type]
+        pageviews = node.pageviews or 0
+        return min(1.0, math.log1p(pageviews) / math.log1p(max(10, threshold * 10)))
+
+    @staticmethod
+    def average(values: list[float]) -> float:
+        return sum(values) / len(values) if values else 0.0
 
     def draft(
         self,

@@ -5,6 +5,7 @@ from generation.generators.base import PuzzleDraft, PuzzleGenerator
 
 class CommonLinkPuzzleGenerator(PuzzleGenerator):
     puzzle_type = "common_link"
+    minimum_score = 80.0
 
     def generate(self, difficulty: str) -> PuzzleDraft | None:
         answer_type = self.random.choice(("person", "movie"))
@@ -45,3 +46,28 @@ class CommonLinkPuzzleGenerator(PuzzleGenerator):
             "reveal": {"kind": "common_link", "answers": [node.payload() for node in common_nodes]},
         }
         return self.draft(difficulty, public, solution, None, {"answer_count": len(common_nodes)})
+
+    def score(self, draft: PuzzleDraft) -> tuple[float, dict[str, float]]:
+        answer = draft.solution_payload["canonical_answer"]
+        clues = draft.public_payload["clues"]
+        accepted_answers = draft.solution_payload["accepted_answer_ids"]
+        assert isinstance(answer, dict)
+        assert isinstance(clues, list)
+        assert isinstance(accepted_answers, list)
+        answer_node = self.graph.nodes[answer["id"]]
+        clue_nodes = [self.graph.nodes[clue["id"]] for clue in clues]
+        clue_qualities = [self.popularity_quality(node, "anchor") for node in clue_nodes]
+        answer_count = len(accepted_answers)
+        factors = {
+            "canonical_answer_popularity": self.popularity_quality(answer_node, "intermediate"),
+            "clue_average_popularity": self.average(clue_qualities),
+            "clue_minimum_popularity": min(clue_qualities, default=0.0),
+            "answer_specificity": 1 / (1 + 0.2 * max(0, answer_count - 1)),
+        }
+        score = 100 * (
+            0.3 * factors["canonical_answer_popularity"]
+            + 0.35 * factors["clue_average_popularity"]
+            + 0.15 * factors["clue_minimum_popularity"]
+            + 0.2 * factors["answer_specificity"]
+        )
+        return score, factors

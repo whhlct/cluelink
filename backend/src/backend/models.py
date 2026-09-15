@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -34,6 +34,8 @@ class PuzzleSolutionRow(GameBase):
     solution_payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     optimal_moves: Mapped[int | None] = mapped_column(Integer)
     quality: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    final_score: Mapped[float | None] = mapped_column(Float)
+    score_factors: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
 
 
 class GenerationRunRow(GameBase):
@@ -51,7 +53,7 @@ class GameSessionRow(GameBase):
     __tablename__ = "game_sessions"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    puzzle_id: Mapped[str] = mapped_column(ForeignKey("puzzles.id", ondelete="RESTRICT"), nullable=False)
+    puzzle_id: Mapped[str] = mapped_column(ForeignKey("puzzles.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="active")
     failure_reason: Mapped[str | None] = mapped_column(String)
     current_entity_id: Mapped[str | None] = mapped_column(String)

@@ -45,6 +45,10 @@ async def persist_drafts(database: Database, drafts: list[PuzzleDraft], config: 
                 duplicate += 1
                 continue
             puzzle_id = str(uuid.uuid4())
+            score = draft.quality.get("score", {})
+            assert isinstance(score, dict)
+            factors = score.get("factors", {})
+            assert isinstance(factors, dict)
             session.add(PuzzleRow(
                 id=puzzle_id, puzzle_type=draft.puzzle_type, difficulty=draft.difficulty, status="published",
                 public_payload=draft.public_payload, policy=draft.policy, generation_version=GENERATION_VERSION,
@@ -53,6 +57,7 @@ async def persist_drafts(database: Database, drafts: list[PuzzleDraft], config: 
             session.add(PuzzleSolutionRow(
                 puzzle_id=puzzle_id, solution_payload=draft.solution_payload,
                 optimal_moves=draft.optimal_moves, quality=draft.quality,
+                final_score=float(score["total"]), score_factors=factors,
             ))
             inserted += 1
         run.status = "completed"

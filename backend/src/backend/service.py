@@ -4,7 +4,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from backend.core import CoreGraph, Database
 from backend.models import GameEventRow, GameSessionRow, PuzzleRow, PuzzleSolutionRow
@@ -73,8 +73,20 @@ class GameService:
                     "status": puzzle.status,
                     "source_entities": sources,
                     "target_entity": target,
+                    "final_score": solution.final_score,
+                    "score_factors": solution.score_factors,
                 })
             return details
+
+    async def clear_puzzles(self, puzzle_type: str | None = None, difficulty: str | None = None) -> int:
+        async with self.database.sessions.begin() as session:
+            query = delete(PuzzleRow)
+            if puzzle_type is not None:
+                query = query.where(PuzzleRow.puzzle_type == puzzle_type)
+            if difficulty is not None:
+                query = query.where(PuzzleRow.difficulty == difficulty)
+            result = await session.execute(query)
+            return result.rowcount or 0
 
     async def get_session(self, session_id: str) -> dict[str, object]:
         async with self.database.sessions.begin() as session:

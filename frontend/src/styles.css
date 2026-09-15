@@ -2,6 +2,8 @@
 * { box-sizing: border-box; } body { margin: 0; } main { width: min(720px, calc(100% - 2rem)); margin: 3rem auto; } header { text-align: center; } h1 { font-size: 3rem; margin-bottom: .25rem; } .card { background: white; padding: 1.5rem; border-radius: 16px; box-shadow: 0 8px 32px #182b5518; } label { display: block; margin: 1rem 0; } select, input, button { font: inherit; padding: .65rem; border-radius: 8px; } select, input { width: 100%; border: 1px solid #cad1e0; } button { border: 0; background: #3559e8; color: white; cursor: pointer; margin-right: .5rem; } button.danger { background: #b5263d; } .meta, .stats, .actions { display: flex; gap: .75rem; flex-wrap: wrap; } .meta span { color: #52617b; text-transform: capitalize; } .picker { position: relative; margin: 1rem 0; } .picker ul { position: absolute; z-index: 2; width: 100%; padding: .25rem; margin: .25rem 0; list-style: none; background: white; border: 1px solid #cad1e0; border-radius: 8px; } .picker button { width: 100%; text-align: left; margin: 0; background: transparent; color: #1a1a2e; } small { color: #65718a; } .hint, .dialog, .terminal { margin-top: 1rem; padding: 1rem; border-radius: 8px; } .hint { background: #fff7d6; } .dialog { background: #fff0f1; } .won { background: #e3f8e8; } .failed { background: #fff0f1; } .error { background: #ffe0e5; color: #8c1c31; padding: 1rem; border-radius: 8px; } .clues { padding-left: 1.25rem; }
 .admin-groups, .admin-puzzle-list { list-style: none; padding: 0; }
 .admin-groups > li { margin: .75rem 0; }
+.admin-group-header { display: flex; gap: .5rem; }
+.admin-group-header .group-button { flex: 1; }
 .group-button { width: 100%; text-align: left; }
 .group-button strong { float: right; }
 .admin-puzzle-list { margin: .5rem 0 0; border: 1px solid #dbe1ee; border-radius: 8px; }
@@ -9,5 +11,6 @@
 .admin-puzzle-list li:last-child { border-bottom: 0; }
 .admin-puzzle-list code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-puzzle-list button { margin: 0; }
+.score { display: block; margin-top: .25rem; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 @media (max-width: 600px) { .admin-puzzle-list li { grid-template-columns: 1fr; gap: .35rem; } }

@@ -114,6 +114,14 @@ def create_app() -> FastAPI:
     async def admin_puzzles(puzzle_type: str, difficulty: str) -> list[dict[str, object]]:
         return await games().admin_puzzles(puzzle_type, difficulty)
 
+    @app.delete("/v1/admin/puzzles")
+    async def admin_clear_all_puzzles() -> dict[str, int]:
+        return {"deleted_puzzles": await games().clear_puzzles()}
+
+    @app.delete("/v1/admin/puzzles/{puzzle_type}/{difficulty}")
+    async def admin_clear_puzzles(puzzle_type: str, difficulty: str) -> dict[str, int]:
+        return {"deleted_puzzles": await games().clear_puzzles(puzzle_type, difficulty)}
+
     @app.post("/v1/admin/puzzles/{puzzle_id}/sessions")
     async def admin_start_puzzle(puzzle_id: str) -> dict[str, object]:
         try:

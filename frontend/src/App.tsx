@@ -10,7 +10,14 @@ const DIFFICULTIES = ["easy", "medium", "hard"] as const;
 type Entity = { id: string; name: string; entity_type: string };
 type GameRoute = { puzzleType: string; difficulty: string };
 type AdminPuzzleSummary = { puzzle_type: string; difficulty: string; count: number };
-type AdminPuzzle = { id: string; status: string; source_entities: Entity[]; target_entity: Entity };
+type AdminPuzzle = {
+  id: string;
+  status: string;
+  source_entities: Entity[];
+  target_entity: Entity;
+  final_score: number | null;
+  score_factors: Record<string, number>;
+};
 type Session = {
   session_id: string;
   status: "active" | "won" | "failed";
@@ -64,10 +71,14 @@ function AdminPuzzles({ onPlay }: { onPlay: (puzzleId: string) => void }) {
   const [puzzles, setPuzzles] = useState<Record<string, AdminPuzzle[]>>({});
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  const loadSummaries = () => {
     request<AdminPuzzleSummary[]>("/v1/admin/puzzles").then(setSummaries).catch((cause) => {
       setError(cause instanceof Error ? cause.message : "Could not load puzzle inventory");
     });
+  };
+
+  useEffect(() => {
+    loadSummaries();
   }, []);
 
   const toggle = (summary: AdminPuzzleSummary) => {
@@ -80,23 +91,40 @@ function AdminPuzzles({ onPlay }: { onPlay: (puzzleId: string) => void }) {
     }).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load puzzles"));
   };
 
+  const clear = (summary?: AdminPuzzleSummary) => {
+    const description = summary ? `${summary.puzzle_type} / ${summary.difficulty}` : "every generated puzzle";
+    if (!window.confirm(`Delete ${description} and all sessions for those puzzles?`)) return;
+    const path = summary ? `/v1/admin/puzzles/${summary.puzzle_type}/${summary.difficulty}` : "/v1/admin/puzzles";
+    request<{ deleted_puzzles: number }>(path, { method: "DELETE" }).then(() => {
+      setExpanded(null);
+      setPuzzles({});
+      loadSummaries();
+    }).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not delete puzzles"));
+  };
+
   return <section className="card admin-puzzles">
     <h2>Puzzle inventory</h2>
     <p>Generated puzzles grouped by type and difficulty.</p>
+    <button className="danger" disabled={summaries.length === 0} onClick={() => clear()}>Clear all puzzles</button>
     {error && <p className="error" role="alert">{error}</p>}
     <ul className="admin-groups">
       {summaries.map((summary) => {
         const key = `${summary.puzzle_type}/${summary.difficulty}`;
         const items = puzzles[key];
         return <li key={key}>
-          <button className="group-button" onClick={() => toggle(summary)}>
-            {expanded === key ? "Hide" : "Show"} {summary.puzzle_type.replace("_", " ")} · {summary.difficulty} <strong>{summary.count}</strong>
-          </button>
+          <div className="admin-group-header">
+            <button className="group-button" onClick={() => toggle(summary)}>
+              {expanded === key ? "Hide" : "Show"} {summary.puzzle_type.replace("_", " ")} · {summary.difficulty} <strong>{summary.count}</strong>
+            </button>
+            <button className="danger" onClick={() => clear(summary)}>Clear</button>
+          </div>
           {expanded === key && <ul className="admin-puzzle-list">
             {!items && <li>Loading puzzles…</li>}
             {items?.map((puzzle) => <li key={puzzle.id}>
               <code>{puzzle.id}</code>
-              <span>{puzzle.source_entities.map((entity) => entity.name).join(" + ")} → {puzzle.target_entity.name}</span>
+              <div><span>{puzzle.source_entities.map((entity) => entity.name).join(" + ")} → {puzzle.target_entity.name}</span>
+                <small className="score">Score {puzzle.final_score?.toFixed(2) ?? "—"} · {Object.entries(puzzle.score_factors).map(([factor, score]) => `${factor.replaceAll("_", " ")}: ${(score * 100).toFixed(1)}%`).join(" · ")}</small>
+              </div>
               <small>{puzzle.status}</small>
               <button disabled={puzzle.status !== "published"} onClick={() => onPlay(puzzle.id)}>Play</button>
             </li>)}

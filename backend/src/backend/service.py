@@ -101,6 +101,9 @@ class GameService:
             self._require_active(game, puzzle)
             if puzzle.puzzle_type != "connection":
                 raise GameError(422, "Moves are only valid for connection puzzles")
+            previous_moves = await self._connection_moves(session, game.id)
+            if entity_id == puzzle.public_payload["start"]["id"] or entity_id in previous_moves:
+                raise GameError(409, "That entity is already part of this connection path")
             edge = self.graph.edge(game.current_entity_id or "", entity_id)
             if edge is None:
                 raise GameError(422, "The proposed entity is not connected to the current entity")
@@ -110,6 +113,19 @@ class GameService:
             await self._event(session, game, "move", {"entity_id": entity_id, "relation_type": edge.relation_type})
             if entity_id == puzzle.public_payload["target"]["id"]:
                 await self._win(session, game, puzzle)
+            else:
+                finishing_edge = self.graph.edge(entity_id, puzzle.public_payload["target"]["id"])
+                if finishing_edge is not None:
+                    target_id = puzzle.public_payload["target"]["id"]
+                    game.current_entity_id = target_id
+                    game.move_count += 1
+                    game.updated_at = datetime.now(timezone.utc)
+                    await self._event(session, game, "move", {
+                        "entity_id": target_id,
+                        "relation_type": finishing_edge.relation_type,
+                        "automatic": True,
+                    })
+                    await self._win(session, game, puzzle)
             return await self._payload(session, game, puzzle, last_relation=edge.relation_type)
 
     async def guess(self, session_id: str, entity_id: str) -> dict[str, object]:
@@ -251,6 +267,27 @@ class GameService:
             event_type=event_type, payload=payload, created_at=datetime.now(timezone.utc),
         ))
 
+    async def _connection_moves(self, session, session_id: str) -> list[str]:
+        events = (await session.scalars(
+            select(GameEventRow)
+            .where(GameEventRow.session_id == session_id, GameEventRow.event_type == "move")
+            .order_by(GameEventRow.sequence)
+        )).all()
+        return [event.payload["entity_id"] for event in events if "entity_id" in event.payload]
+
+    async def _connection_path(self, session, game: GameSessionRow, puzzle: PuzzleRow) -> dict[str, object]:
+        start = puzzle.public_payload["start"]
+        target = puzzle.public_payload["target"]
+        moves = await self._connection_moves(session, game.id)
+        events = (await session.scalars(
+            select(GameEventRow)
+            .where(GameEventRow.session_id == game.id, GameEventRow.event_type == "move")
+            .order_by(GameEventRow.sequence)
+        )).all()
+        nodes = [start, *[self.graph.nodes[entity_id].payload() for entity_id in moves]]
+        relations = [event.payload["relation_type"] for event in events]
+        return {"nodes": nodes, "relations": relations, "target": target}
+
     async def _payload(self, session, game: GameSessionRow, puzzle: PuzzleRow, last_relation: str | None = None) -> dict[str, object]:
         terminal = game.status != "active"
         result: dict[str, object] = {
@@ -267,6 +304,8 @@ class GameService:
         }
         if last_relation:
             result["last_relation"] = last_relation
+        if puzzle.puzzle_type == "connection":
+            result["connection_path"] = await self._connection_path(session, game, puzzle)
         if terminal:
             solution = await session.get(PuzzleSolutionRow, puzzle.id)
             assert solution is not None

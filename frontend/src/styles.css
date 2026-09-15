@@ -12,5 +12,12 @@
 .admin-puzzle-list code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-puzzle-list button { margin: 0; }
 .score { display: block; margin-top: .25rem; }
+.connection-builder { margin: 1.5rem 0; overflow-x: auto; }
+.connection-path { display: flex; align-items: center; gap: .5rem; min-width: max-content; padding: .75rem 0; }
+.path-node { display: grid; gap: .25rem; min-width: 10rem; padding: .75rem; text-align: center; border: 2px solid #3559e8; border-radius: 12px; background: #eef2ff; }
+.path-node.target { border-color: #6851a7; background: #f4f0ff; }
+.path-link { display: grid; justify-items: center; min-width: 7rem; color: #52617b; font-size: .8rem; text-align: center; }
+.path-link::after { content: ""; width: 100%; border-top: 2px solid #3559e8; }
+.path-gap { min-width: 11rem; padding: .75rem .5rem; border-top: 2px dashed #9ba6bb; color: #65718a; font-size: .85rem; text-align: center; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 @media (max-width: 600px) { .admin-puzzle-list li { grid-template-columns: 1fr; gap: .35rem; } }

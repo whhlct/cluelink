@@ -1,4 +1,4 @@
-import { FormEvent, MouseEvent, useEffect, useState } from "react";
+import { FormEvent, Fragment, MouseEvent, useEffect, useState } from "react";
 
 // In development Vite proxies /v1 to the backend, avoiding browser-to-WSL port forwarding.
 // Set VITE_API_URL when deploying the static client with a separately hosted API.
@@ -9,6 +9,7 @@ const DIFFICULTIES = ["easy", "medium", "hard"] as const;
 
 type Entity = { id: string; name: string; entity_type: string };
 type GameRoute = { puzzleType: string; difficulty: string };
+type ConnectionPath = { nodes: Entity[]; relations: string[]; target: Entity };
 type AdminPuzzleSummary = { puzzle_type: string; difficulty: string; count: number };
 type AdminPuzzle = {
   id: string;
@@ -26,6 +27,7 @@ type Session = {
   progress: { current_entity?: Entity | null; moves: number; guesses: number; wrong_guesses: number; hints: number; remaining_guesses: number | null; stars?: number | null; elapsed_seconds: number };
   hint?: Record<string, unknown>;
   solution?: { kind: string; path?: Entity[]; relations?: string[]; answers?: Entity[] };
+  connection_path?: ConnectionPath;
   last_relation?: string;
 };
 
@@ -63,6 +65,22 @@ function EntityPicker({ onSelect, entityType }: { onSelect: (entity: Entity) => 
     <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search people or movies" />
     {results.length > 0 && <ul>{results.map((entity) => <li key={entity.id}><button onClick={() => { onSelect(entity); setQuery(""); setResults([]); }}>{entity.name} <small>{entity.entity_type}</small></button></li>)}</ul>}
   </div>;
+}
+
+function ConnectionPathBuilder({ path }: { path: ConnectionPath }) {
+  const reachedTarget = path.nodes.at(-1)?.id === path.target.id;
+  return <section className="connection-builder" aria-label="Connection path">
+    <div className="connection-path">
+      {path.nodes.map((node, index) => <Fragment key={node.id}>
+        <div className="path-node"><strong>{node.name}</strong><small>{node.entity_type}</small></div>
+        {path.relations[index] && <div className="path-link"><span>{path.relations[index].replaceAll("_", " ")}</span></div>}
+      </Fragment>)}
+      {!reachedTarget && <>
+        <div className="path-gap">Find the missing connection</div>
+        <div className="path-node target"><strong>{path.target.name}</strong><small>{path.target.entity_type}</small></div>
+      </>}
+    </div>
+  </section>;
 }
 
 function AdminPuzzles({ onPlay }: { onPlay: (puzzleId: string) => void }) {
@@ -239,9 +257,10 @@ export function App() {
       <div className="meta"><span>{session.puzzle.type.replace("_", " ")}</span><span>{session.puzzle.difficulty}</span></div>
       <h2>{String(payload?.prompt ?? "")}</h2>
       {Array.isArray(payload?.clues) && <ul className="clues">{(payload.clues as Entity[]).map((clue) => <li key={clue.id}>{clue.name}</li>)}</ul>}
-      {session.puzzle.type === "connection" && <p>Current: <strong>{session.progress.current_entity?.name}</strong> → Target: <strong>{(payload?.target as Entity)?.name}</strong></p>}
+      {session.puzzle.type === "connection" && session.connection_path && <ConnectionPathBuilder path={session.connection_path} />}
       <p className="stats">Moves: {session.progress.moves} · Guesses: {session.progress.guesses}{session.progress.remaining_guesses === null ? " (unlimited)" : ` / ${session.progress.guesses + session.progress.remaining_guesses}`} · Hints: {session.progress.hints} · {session.progress.elapsed_seconds}s</p>
       {!terminal && <>
+        <p>{session.puzzle.type === "connection" ? "Add an entity connected to the last entity in the path." : "Submit your answer."}</p>
         <EntityPicker entityType={session.puzzle.type === "connection" ? undefined : String(payload?.answer_entity_type)} onSelect={(entity) => update(() => request<Session>(`/v1/sessions/${session.session_id}/${session.puzzle.type === "connection" ? "moves" : "guesses"}`, { method: "POST", body: JSON.stringify({ entity_id: entity.id }) }))} />
         <div className="actions"><button onClick={() => update(() => request<Session>(`/v1/sessions/${session.session_id}/hints`, { method: "POST" }))}>Hint</button><button className="danger" onClick={() => setGivingUp(true)}>Give up</button></div>
         {hint && <aside className="hint"><strong>Hint:</strong> {hint.next_entity ? `Try ${(hint.next_entity as Entity).name}` : hint.relation_type ? `Relation: ${hint.relation_type}` : hint.answer_initial ? `Answer starts with ${hint.answer_initial}` : `Answer type: ${hint.answer_entity_type}`}</aside>}
